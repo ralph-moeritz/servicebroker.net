@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Text;
@@ -42,20 +43,20 @@ namespace ServiceBroker.Net {
             SendInternal(transaction, conversationHandle, messageType, body);
         }
 
-        public static Message Receive(IDbTransaction transaction, string queueName) {
-            return ReceiveInternal(transaction, queueName, null, false, null);
+        public static IEnumerable<Message> Receive(IDbTransaction transaction, string queueName, int batchSize = 1) {
+            return ReceiveInternal(transaction, queueName, null, false, null, batchSize);
         }
 
-        public static Message Receive(IDbTransaction transaction, string queueName, Guid conversationHandle) {
-            return ReceiveInternal(transaction, queueName, conversationHandle, false, null);
+        public static IEnumerable<Message> Receive(IDbTransaction transaction, string queueName, Guid conversationHandle, int batchSize = 1) {
+            return ReceiveInternal(transaction, queueName, conversationHandle, false, null, batchSize);
         }
 
-        public static Message WaitAndReceive(IDbTransaction transaction, string queueName, int waitTimeout) {
-            return ReceiveInternal(transaction, queueName, null, true, waitTimeout);
+        public static IEnumerable<Message> WaitAndReceive(IDbTransaction transaction, string queueName, int waitTimeout, int batchSize = 1) {
+            return ReceiveInternal(transaction, queueName, null, true, waitTimeout, batchSize);
         }
 
-        public static Message WaitAndReceive(IDbTransaction transaction, string queueName, Guid conversationHandle, int waitTimeout) {
-            return ReceiveInternal(transaction, queueName, conversationHandle, true, waitTimeout);
+        public static IEnumerable<Message> WaitAndReceive(IDbTransaction transaction, string queueName, Guid conversationHandle, int waitTimeout, int batchSize = 1) {
+            return ReceiveInternal(transaction, queueName, conversationHandle, true, waitTimeout, batchSize);
         }
 
         public static int QueryMessageCount(SqlTransaction transaction, string queueName, string messageContractName) {
@@ -138,7 +139,7 @@ namespace ServiceBroker.Net {
             var count = cmd.ExecuteNonQuery();
         }
 
-        private static Message ReceiveInternal(IDbTransaction transaction, string queueName, Guid? conversationHandle, bool wait, int? waitTimeout) {
+        private static IEnumerable<Message> ReceiveInternal(IDbTransaction transaction, string queueName, Guid? conversationHandle, bool wait, int? waitTimeout, int batchSize) {
             EnsureSqlTransaction(transaction);
             var cmd = transaction.Connection.CreateCommand() as SqlCommand;
 
@@ -146,9 +147,12 @@ namespace ServiceBroker.Net {
 
             if (wait && waitTimeout.HasValue && waitTimeout.Value > 0)
                 query.Append("WAITFOR(");
-            query.Append("RECEIVE TOP(1) ");
 
-            query.Append("conversation_group_id, conversation_handle, " +
+            query.Append("RECEIVE TOP(@num)");
+            var pNum = cmd.Parameters.Add("@num", SqlDbType.Int);
+            pNum.Value = batchSize;
+
+            query.Append(" conversation_group_id, conversation_handle, " +
                          "message_sequence_number, service_name, service_contract_name, " +
                          "message_type_name, validation, message_body " +
                          "FROM ");
@@ -156,28 +160,30 @@ namespace ServiceBroker.Net {
 
             if (conversationHandle.HasValue && conversationHandle.Value != Guid.Empty) {
                 query.Append(" WHERE conversation_handle = @ch");
-                var param = cmd.Parameters.Add("@ch", SqlDbType.UniqueIdentifier);
-                param.Value = conversationHandle.Value;
+                var pCh = cmd.Parameters.Add("@ch", SqlDbType.UniqueIdentifier);
+                pCh.Value = conversationHandle.Value;
             }
 
             if (wait && waitTimeout.HasValue && waitTimeout.Value > 0) {
                 query.Append("), TIMEOUT @to");
-                var param = cmd.Parameters.Add("@to", SqlDbType.Int);
-                param.Value = waitTimeout.Value;
+                var pTo = cmd.Parameters.Add("@to", SqlDbType.Int);
+                pTo.Value = waitTimeout.Value;
                 cmd.CommandTimeout = 0;
             }
 
             cmd.CommandText = query.ToString();
             cmd.Transaction = transaction as SqlTransaction;
 
+            IList<Message> messages;
             using (var dataReader = cmd.ExecuteReader()) {
-                if (dataReader.Read()) {
-                    return Message.Load(dataReader);
+                messages = new List<Message>();
+                while (dataReader.Read()) {
+                    messages.Add(Message.Load(dataReader));
                 }
                 dataReader.Close();
             }
 
-            return null;
+            return messages;
         }
 
         private static int QueryMessageCountInternal(SqlTransaction transaction, string queueName, string messageContractName) {
