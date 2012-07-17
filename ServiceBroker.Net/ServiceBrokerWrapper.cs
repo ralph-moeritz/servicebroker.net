@@ -23,16 +23,28 @@ namespace ServiceBroker.Net {
             return BeginConversationInternal(transaction, initiatorServiceName, targetServiceName, messageContractName, lifetime, encryption);
         }
 
-        public static void EndConversation(IDbTransaction transaction, Guid conversationHandle) {
-            EndConversation(transaction, conversationHandle, false);
+        public static void ForceEndConversation(IDbTransaction transaction, Guid conversationHandle) {
+            ForceEndConversation(transaction, conversationHandle, false);
         }
 
-        public static void EndConversation(IDbTransaction transaction, Guid conversationHandle, bool withCleanup) {
-            EndConversationInternal(transaction, conversationHandle, false, null, null, withCleanup);
+        public static void ForceEndConversation(IDbTransaction transaction, Guid conversationHandle, bool withCleanup) {
+            ForceEndConversationInternal(transaction, conversationHandle, false, null, null, withCleanup);
         }
 
-        public static void EndConversation(IDbTransaction transaction, Guid conversationHandle, int errorCode, string errorDescription) {
-            EndConversationInternal(transaction, conversationHandle, true, errorCode, errorDescription, false);
+        public static void ForceEndConversation(IDbTransaction transaction, Guid conversationHandle, int errorCode, string errorDescription) {
+            ForceEndConversationInternal(transaction, conversationHandle, true, errorCode, errorDescription, false);
+        }
+
+        public static void EndConversation(IDbTransaction transaction, Guid conversationHandle, string queueName, int errorCode, string errorDescription) {
+            EndConversationInternal(transaction, conversationHandle, queueName, true, errorCode, errorDescription, false);
+        }
+
+        public static void EndConversation(IDbTransaction transaction, Guid conversationHandle, string queueName) {
+            EndConversation(transaction, conversationHandle, queueName, false);
+        }
+
+        public static void EndConversation(IDbTransaction transaction, Guid conversationHandle, string queueName, bool withCleanup) {
+            EndConversationInternal(transaction, conversationHandle, queueName, false, null, null, withCleanup);
         }
 
         public static void Send(IDbTransaction transaction, Guid conversationHandle, string messageType) {
@@ -59,13 +71,13 @@ namespace ServiceBroker.Net {
             return ReceiveInternal(transaction, queueName, conversationHandle, true, waitTimeout, batchSize);
         }
 
-        public static int QueryMessageCount(SqlTransaction transaction, string queueName, string messageContractName) {
+        public static int QueryMessageCount(IDbTransaction transaction, string queueName, string messageContractName) {
             return QueryMessageCountInternal(transaction, queueName, messageContractName);
         }
 
         private static Guid BeginConversationInternal(IDbTransaction transaction, string initiatorServiceName, string targetServiceName, string messageContractName, int? lifetime, bool? encryption) {
             EnsureSqlTransaction(transaction);
-            var cmd = transaction.Connection.CreateCommand() as SqlCommand;
+            var cmd = (SqlCommand) transaction.Connection.CreateCommand();
             var query = new StringBuilder();
 
             query.Append("BEGIN DIALOG @ch FROM SERVICE " + initiatorServiceName + " TO SERVICE @ts ON CONTRACT @cn WITH ENCRYPTION = ");
@@ -89,16 +101,46 @@ namespace ServiceBroker.Net {
             param.Value = messageContractName;
 
             cmd.CommandText = query.ToString();
-            cmd.Transaction = transaction as SqlTransaction;
+            cmd.Transaction = (SqlTransaction) transaction;
             var count = cmd.ExecuteNonQuery();
 
-            var handleParam = cmd.Parameters["@ch"] as SqlParameter;
-            return (Guid)handleParam.Value;
+            var handleParam = cmd.Parameters["@ch"];
+            return (Guid) handleParam.Value;
         }
 
-        private static void EndConversationInternal(IDbTransaction transaction, Guid conversationHandle, bool withError, int? errorCode, string errorDescription, bool withCleanup) {
+        private static void EndConversationInternal(IDbTransaction transaction, Guid conversationHandle, string queueName, bool withError, int? errorCode, string errorDescription, bool withCleanup) {
             EnsureSqlTransaction(transaction);
-            var cmd = transaction.Connection.CreateCommand() as SqlCommand;
+            var cmd = (SqlCommand) transaction.Connection.CreateCommand();
+
+            var query = new StringBuilder();
+            query.Append("IF NOT EXISTS (SELECT COUNT(*) FROM ");
+            query.Append(queueName);
+            query.Append(" WHERE conversation_handle = @ch)");
+            query.Append(" END CONVERSATION @ch");
+
+            var pCh = cmd.Parameters.Add("@ch", SqlDbType.UniqueIdentifier);
+            pCh.Value = conversationHandle;
+
+            if (withError) {
+                query.Append(" WITH ERROR = @ec DESCRIPTION = @desc");
+
+                var pEc = cmd.Parameters.Add("@ec", SqlDbType.Int);
+                pEc.Value = errorCode;
+
+                var pDesc = cmd.Parameters.Add("@desc", SqlDbType.NVarChar, 255);
+                pDesc.Value = errorDescription;
+            } else if (withCleanup) {
+                query.Append(" WITH CLEANUP");
+            }
+          
+            cmd.CommandText = query.ToString();
+            cmd.Transaction = (SqlTransaction) transaction;
+            var count = cmd.ExecuteNonQuery();
+        }
+
+        private static void ForceEndConversationInternal(IDbTransaction transaction, Guid conversationHandle, bool withError, int? errorCode, string errorDescription, bool withCleanup) {
+            EnsureSqlTransaction(transaction);
+            var cmd = (SqlCommand) transaction.Connection.CreateCommand();
 
             cmd.CommandText = "END CONVERSATION @ch";
             var param = cmd.Parameters.Add("@ch", SqlDbType.UniqueIdentifier);
@@ -114,15 +156,15 @@ namespace ServiceBroker.Net {
                 cmd.CommandText += " WITH CLEANUP";
             }
 
-            cmd.Transaction = transaction as SqlTransaction;
+            cmd.Transaction = (SqlTransaction) transaction;
             var count = cmd.ExecuteNonQuery();
         }
 
         private static void SendInternal(IDbTransaction transaction, Guid conversationHandle, string messageType, byte[] body) {
             EnsureSqlTransaction(transaction);
-            var cmd = transaction.Connection.CreateCommand() as SqlCommand;
+            var cmd = (SqlCommand) transaction.Connection.CreateCommand();
 
-            string query = "SEND ON CONVERSATION @ch MESSAGE TYPE @mt ";
+            var query = "SEND ON CONVERSATION @ch MESSAGE TYPE @mt ";
             var param = cmd.Parameters.Add("@ch", SqlDbType.UniqueIdentifier);
             param.Value = conversationHandle;
             param = cmd.Parameters.Add("@mt", SqlDbType.NVarChar, 255);
@@ -135,13 +177,13 @@ namespace ServiceBroker.Net {
             }
 
             cmd.CommandText = query;
-            cmd.Transaction = transaction as SqlTransaction;
+            cmd.Transaction = (SqlTransaction) transaction;
             var count = cmd.ExecuteNonQuery();
         }
 
         private static IEnumerable<Message> ReceiveInternal(IDbTransaction transaction, string queueName, Guid? conversationHandle, bool wait, int? waitTimeout, int batchSize) {
             EnsureSqlTransaction(transaction);
-            var cmd = transaction.Connection.CreateCommand() as SqlCommand;
+            var cmd = (SqlCommand) transaction.Connection.CreateCommand();
 
             var query = new StringBuilder();
 
@@ -172,7 +214,7 @@ namespace ServiceBroker.Net {
             }
 
             cmd.CommandText = query.ToString();
-            cmd.Transaction = transaction as SqlTransaction;
+            cmd.Transaction = (SqlTransaction) transaction;
 
             IList<Message> messages;
             using (var dataReader = cmd.ExecuteReader()) {
@@ -186,14 +228,14 @@ namespace ServiceBroker.Net {
             return messages;
         }
 
-        private static int QueryMessageCountInternal(SqlTransaction transaction, string queueName, string messageContractName) {
+        private static int QueryMessageCountInternal(IDbTransaction transaction, string queueName, string messageContractName) {
             EnsureSqlTransaction(transaction);
-            var cmd = transaction.Connection.CreateCommand() as SqlCommand;
+            var cmd = (SqlCommand) transaction.Connection.CreateCommand();
 
             cmd.CommandText = "SELECT COUNT(*) FROM " + queueName + " WHERE message_type_name = @messageContractName";
             var param = cmd.Parameters.Add("@messageContractName", SqlDbType.NVarChar, 128);
             param.Value = messageContractName;
-            cmd.Transaction = transaction as SqlTransaction;
+            cmd.Transaction = (SqlTransaction) transaction;
 
             return (int)cmd.ExecuteScalar();
         }
