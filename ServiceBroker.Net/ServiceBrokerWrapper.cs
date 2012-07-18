@@ -113,7 +113,7 @@ namespace ServiceBroker.Net {
             var cmd = (SqlCommand) transaction.Connection.CreateCommand();
 
             var query = new StringBuilder();
-            query.Append("IF NOT EXISTS (SELECT COUNT(*) FROM ");
+            query.Append("IF NOT EXISTS (SELECT 1 FROM ");
             query.Append(queueName);
             query.Append(" WHERE conversation_handle = @ch)");
             query.Append(" END CONVERSATION @ch");
@@ -220,7 +220,9 @@ namespace ServiceBroker.Net {
             using (var dataReader = cmd.ExecuteReader()) {
                 messages = new List<Message>();
                 while (dataReader.Read()) {
-                    messages.Add(Message.Load(dataReader));
+                    var msg = Message.Load(dataReader);
+                    if (msg.ConversationHandle == Guid.Empty || msg.Body.Length == 0) continue;
+                    messages.Add(msg);
                 }
                 dataReader.Close();
             }
