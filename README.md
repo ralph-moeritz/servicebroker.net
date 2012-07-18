@@ -11,20 +11,22 @@ SQL Server Service Broker is a centralized message queuing subsystem that is pro
 Usage
 -----
 
-    var connectionString = "Data Source=.\SQLEXPRESS;Initial Catalog=SampleDB;Integrated Security=true";
-    var inputQueueName = "SampleQueue";
-    var receiveTimeout = 10000;
-    var receiveLimit = 50;
+```csharp
+var connectionString = "Data Source=.\SQLEXPRESS;Initial Catalog=SampleDB;Integrated Security=true";
+var inputQueueName = "SampleQueue";
+var receiveTimeout = 10000;
+var receiveLimit = 50;
     
-    IEnumerable<Message> messages = null;
-    var xman = new ServiceBrokerTransactionManager(connectionString);
-    xman.RunInTransaction(
-        transaction =>
-        { 
-            messages = ServiceBrokerWrapper.WaitAndReceive(transaction, inputQueueName, receiveTimeout, receiveLimit);
-        });
+IEnumerable<Message> messages = null;
+var xman = new ServiceBrokerTransactionManager(connectionString);
+xman.RunInTransaction(
+    transaction =>
+    { 
+        messages = ServiceBrokerWrapper.WaitAndReceive(transaction, inputQueueName, receiveTimeout, receiveLimit);
+    });
         
-    // Do something with `messages`
+// Do something with messages
+```
 
 Service Broker Automatic Poison Message Detection
 -------------------------------------------------
