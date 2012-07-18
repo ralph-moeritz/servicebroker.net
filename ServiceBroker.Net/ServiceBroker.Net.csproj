@@ -34,8 +34,6 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
   </ItemGroup>
@@ -45,6 +43,16 @@
     <Compile Include="ServiceBrokerWrapper.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PreBuildEvent>rd /s /q "$(TargetDir)nuget"
+del /f /q "$(TargetDir)*.nupkg"</PreBuildEvent>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PostBuildEvent>mkdir "$(TargetDir)nuget\lib\net40"
+copy "$(SolutionDir)*.nuspec" "$(TargetDir)nuget"
+copy "$(TargetPath)" "$(TargetDir)nuget\lib\net40"
+"$(SolutionDir).nuget\nuget.exe" pack "$(TargetDir)nuget\ServiceBroker.Net.nuspec"</PostBuildEvent>
+  </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">

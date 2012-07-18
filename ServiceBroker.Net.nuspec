@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>ServiceBroker.Net</id>
+    <version>1.1.0</version>
+    <authors>Joseph Daigle,Ralph Möritz</authors>
+    <owners>Ralph Möritz</owners>
+    <projectUrl>https://github.com/ralmoritz/servicebroker.net</projectUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>A simple wrapper API for SQL Server Service Broker (SSSB).</description>
+    <releaseNotes />
+    <copyright>Copyright 2012 Joseph Daigle</copyright>
+    <tags>SSSB SQL ServiceBroker .NET</tags>
+  </metadata>
+</package>
